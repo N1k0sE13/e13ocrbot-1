@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: e13ocrbot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Монтируем файл с OAuth-токеном Qwen (read-only, обновляется на хосте)
+      - ~/.qwen/oauth_creds.json:/app/oauth_creds.json:ro
+    # Для отладки можно зайти в контейнер: docker exec -it e13ocrbot bash
+
