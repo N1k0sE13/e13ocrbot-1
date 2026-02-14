@@ -33,7 +33,6 @@ from telegram.ext import (
 load_dotenv()
 
 TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", "")
-QWEN_AUTH_TOKEN: str = os.getenv("QWEN_AUTH_TOKEN", "")
 
 # Путь к файлу с OAuth-креденшелами Qwen (монтируется из ~/.qwen/ хоста)
 QWEN_OAUTH_CREDS_PATH: str = os.getenv("QWEN_OAUTH_CREDS_PATH", "/app/oauth_creds.json")
@@ -79,28 +78,28 @@ def get_qwen_token() -> str:
     Получает актуальный OAuth-токен Qwen.
 
     Читает access_token из oauth_creds.json (монтируется из ~/.qwen/).
-    Если файл недоступен — fallback на значение из .env.
+    Принудительно синхронизирует файловую систему перед чтением,
+    чтобы получить актуальное содержимое файла.
     """
     try:
-        with open(QWEN_OAUTH_CREDS_PATH, "r", encoding="utf-8") as f:
+        # Принудительно синхронизируем буферы ФС, чтобы увидеть обновления с хоста
+        os.sync()
+
+        with open(QWEN_OAUTH_CREDS_PATH, "r", encoding="utf-8", buffering=1) as f:
             creds = json.load(f)
         token = creds.get("access_token", "")
         if token:
             logger.debug("OAuth-токен прочитан из %s", QWEN_OAUTH_CREDS_PATH)
             return token
+        else:
+            logger.error("Поле access_token пустое в %s", QWEN_OAUTH_CREDS_PATH)
+            raise ValueError("access_token отсутствует в файле")
     except FileNotFoundError:
-        logger.warning(
-            "Файл %s не найден, используется токен из .env",
-            QWEN_OAUTH_CREDS_PATH,
-        )
+        logger.error("Файл %s не найден", QWEN_OAUTH_CREDS_PATH)
+        raise
     except (json.JSONDecodeError, OSError) as exc:
-        logger.warning(
-            "Ошибка чтения %s: %s. Используется токен из .env",
-            QWEN_OAUTH_CREDS_PATH,
-            exc,
-        )
-
-    return QWEN_AUTH_TOKEN
+        logger.error("Ошибка чтения %s: %s", QWEN_OAUTH_CREDS_PATH, exc)
+        raise
 
 
 async def call_vision_api(image_base64: str) -> str:
@@ -327,11 +326,19 @@ def main() -> None:
         logger.critical("Не задана переменная окружения TELEGRAM_TOKEN")
         sys.exit(1)
 
-    if not QWEN_AUTH_TOKEN and not os.path.exists(QWEN_OAUTH_CREDS_PATH):
+    if not os.path.exists(QWEN_OAUTH_CREDS_PATH):
         logger.critical(
-            "Не задан QWEN_AUTH_TOKEN и не найден файл %s",
+            "Файл %s не найден. Убедитесь, что он монтирован через docker-compose",
             QWEN_OAUTH_CREDS_PATH,
         )
+        sys.exit(1)
+
+    # Проверяем, что файл содержит валидный токен
+    try:
+        get_qwen_token()
+        logger.info("Токен Qwen успешно загружен из %s", QWEN_OAUTH_CREDS_PATH)
+    except Exception as exc:
+        logger.critical("Не удалось загрузить токен из %s: %s", QWEN_OAUTH_CREDS_PATH, exc)
         sys.exit(1)
 
     logger.info("Запуск E13 OCR Bot...")

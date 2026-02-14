@@ -9,13 +9,13 @@ Telegram-бот для распознавания текста с изображ
 - Поддержка форматов: JPEG, PNG, WebP, GIF
 - Результат в формате Markdown с сохранением структуры
 - Индикатор обработки и обработка ошибок
+- Автоматическое чтение актуального OAuth-токена из файла (без перезапуска)
 
 ## Требования
 
 - Docker и Docker Compose
-- Node.js и npm (для получения Qwen Auth Token)
 - Telegram Bot Token (от [@BotFather](https://t.me/BotFather))
-- Qwen Portal Vision API — OAuth токен
+- Qwen CLI (для авторизации и получения OAuth-токена)
 
 ## Использование
 
@@ -40,8 +40,6 @@ Telegram-бот для распознавания текста с изображ
 
 ## Установка на сервере
 
-> **Важно:** Перед запуском бота необходимо получить `QWEN_AUTH_TOKEN` (см. раздел "Получение Qwen Auth Token" ниже).
-
 ### 1. Установка Docker и Docker Compose
 
 ```bash
@@ -56,33 +54,41 @@ sudo apt-get install docker-compose-plugin
 
 ### 2. Получение Qwen Auth Token
 
-Перед настройкой переменных окружения необходимо установить Qwen CLI и получить токен авторизации.
+Перед запуском бота необходимо установить Qwen CLI и пройти авторизацию.
 
-#### 2.1 Установка  Qwen CLI
-curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen.sh | bash
-
- Переподключитесь к серверу (выйдите и войдите снова)
-
-# Проверка установки
-qwen --version
-
-qwen 
-
-Запустится QWEN
-далее выберете Qwen OAuth
-Скопируйте ссылку авторизации и вставьте в браузере - нажмите аторизоваться 
-
-
-#### Получение токена из конфигурационного файла
-
-После успешной авторизации токен сохраняется в конфигурационном файле:
+#### 2.1 Установка Qwen CLI
 
 ```bash
-# Токен хранится в файле:
-cat ~/.qwen/oauth_creds.json
-
-# В файле найдите поле "token", "authToken" или "apiKey" и скопируйте его значение
+curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen.sh | bash
 ```
+
+Переподключитесь к серверу (выйдите и войдите снова), затем проверьте установку:
+
+```bash
+qwen --version
+```
+
+#### 2.2 Авторизация
+
+```bash
+qwen
+```
+
+Запустится Qwen CLI. Выберите **Qwen OAuth**, скопируйте ссылку авторизации, вставьте в браузер и нажмите «Авторизоваться».
+
+После успешной авторизации токен автоматически сохраняется в файл:
+
+```
+~/.qwen/oauth_creds.json
+```
+
+Проверить содержимое:
+
+```bash
+cat ~/.qwen/oauth_creds.json
+```
+
+> **Важно:** Этот файл монтируется в контейнер через `docker-compose.yml`. Бот читает `access_token` из него при каждом запросе к API, поэтому при обновлении токена перезапуск контейнера не требуется.
 
 ### 3. Клонирование и настройка проекта
 
@@ -100,10 +106,7 @@ nano .env
 
 ```
 TELEGRAM_TOKEN=ваш_токен_от_BotFather
-QWEN_AUTH_TOKEN=ваш_токен_из_qwen_cli
 ```
-
-**Важно:** Значение `QWEN_AUTH_TOKEN` должно быть получено из конфигурационного файла Qwen CLI (см. раздел 2 выше).
 
 ### 4. Запуск контейнера
 
@@ -112,11 +115,7 @@ QWEN_AUTH_TOKEN=ваш_токен_из_qwen_cli
 docker-compose up -d
 ```
 
-Или напрямую через Docker:
-```bash
-docker build -t e13ocrbot .
-docker run -d --name e13ocrbot --env-file .env --restart unless-stopped e13ocrbot
-```
+> При запуске файл `~/.qwen/oauth_creds.json` с хоста монтируется в контейнер по пути `/app/oauth_creds.json` (read-only). Если файл не найден — бот не запустится.
 
 ### 5. Просмотр логов
 ```bash
@@ -146,31 +145,12 @@ docker-compose restart
 docker ps | grep e13ocrbot
 ```
 
-### 7. Использование Qwen CLI в контейнере
-
-Для доступа к Qwen CLI внутри контейнера:
-```bash
-docker exec -it e13ocrbot bash
-# Внутри контейнера:
-qwen
-```
-
-### 8. Пересборка образа
+### 7. Пересборка образа
 
 После изменений в коде или зависимостях:
 ```bash
 docker-compose build
 docker-compose up -d
-```
-
-### Структура Docker-файлов
-
-```
-e13ocrbot/
-├── Dockerfile          # Конфигурация образа
-├── docker-compose.yml  # Оркестрация контейнера
-├── .dockerignore      # Исключения для сборки
-└── .env               # Переменные окружения (не в Git!)
 ```
 
 ## Структура проекта
@@ -184,15 +164,23 @@ e13ocrbot/
 ├── .dockerignore       # Исключения для Docker-сборки
 ├── .env.example        # Пример файла конфигурации
 ├── .gitignore          # Исключения для Git
-└── README.md           # Документация (этот файл)
+└── README.md           # Документация
 ```
 
 ## Переменные окружения
 
-| Переменная       | Описание                           | Обязательная |
-| ---------------- | ---------------------------------- | ------------ |
-| `TELEGRAM_TOKEN` | Токен Telegram бота от @BotFather  | ✅           |
-| `QWEN_AUTH_TOKEN`| OAuth токен Qwen Portal Vision API | ✅           |
+| Переменная             | Описание                                          | Обязательная |
+| ---------------------- | ------------------------------------------------- | ------------ |
+| `TELEGRAM_TOKEN`       | Токен Telegram бота от @BotFather                 | ✅           |
+| `QWEN_OAUTH_CREDS_PATH` | Путь к файлу OAuth-креденшелов (по умолчанию `/app/oauth_creds.json`) | ❌ |
+
+## Монтируемые файлы
+
+| Файл на хосте                | Файл в контейнере         | Описание                        |
+| ---------------------------- | ------------------------- | ------------------------------- |
+| `~/.qwen/oauth_creds.json`  | `/app/oauth_creds.json`   | OAuth-токен Qwen (read-only)    |
+
+Бот читает `access_token` из этого файла при каждом запросе к API. Файл синхронизируется с хостом через bind mount.
 
 ## Обработка ошибок
 
