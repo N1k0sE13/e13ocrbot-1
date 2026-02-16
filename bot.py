@@ -35,7 +35,7 @@ load_dotenv()
 TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", "")
 
 # Путь к файлу с OAuth-креденшелами Qwen (монтируется из ~/.qwen/ хоста)
-QWEN_OAUTH_CREDS_PATH: str = os.getenv("QWEN_OAUTH_CREDS_PATH", "/app/oauth_creds.json")
+QWEN_OAUTH_CREDS_PATH: str = os.getenv("QWEN_OAUTH_CREDS_PATH", "/app/qwen_creds/oauth_creds.json")
 
 # ---------------------------------------------------------------------------
 # Настройки API
@@ -77,15 +77,12 @@ def get_qwen_token() -> str:
     """
     Получает актуальный OAuth-токен Qwen.
 
-    Читает access_token из oauth_creds.json (монтируется из ~/.qwen/).
-    Принудительно синхронизирует файловую систему перед чтением,
-    чтобы получить актуальное содержимое файла.
+    Читает access_token из oauth_creds.json.
+    Директория ~/.qwen/ монтируется в контейнер через docker-compose,
+    поэтому изменения файла на хосте видны сразу.
     """
     try:
-        # Принудительно синхронизируем буферы ФС, чтобы увидеть обновления с хоста
-        os.sync()
-
-        with open(QWEN_OAUTH_CREDS_PATH, "r", encoding="utf-8", buffering=1) as f:
+        with open(QWEN_OAUTH_CREDS_PATH, "r", encoding="utf-8") as f:
             creds = json.load(f)
         token = creds.get("access_token", "")
         if token:

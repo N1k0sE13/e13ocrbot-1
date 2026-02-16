@@ -10,7 +10,7 @@ services:
     env_file:
       - .env
     volumes:
-      # Монтируем файл с OAuth-токеном Qwen (read-only, обновляется на хосте)
-      - ~/.qwen/oauth_creds.json:/app/oauth_creds.json:ro
+      # Монтируем директорию с OAuth-токеном Qwen (read-only, обновляется на хосте)
+      - ~/.qwen:/app/qwen_creds:ro
     # Для отладки можно зайти в контейнер: docker exec -it e13ocrbot bash
 
