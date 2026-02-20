@@ -90,19 +90,43 @@ def refresh_token(refresh_token_value: str) -> dict:
     req = urllib.request.Request(
         QWEN_OAUTH_TOKEN_URL,
         data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            # User-Agent обязателен: Alibaba Cloud WAF блокирует Python-urllib
+            "User-Agent": "curl/7.81.0",
+        },
         method="POST",
     )
 
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read().decode("utf-8")
+            content_type = resp.headers.get("Content-Type", "")
+
+            # WAF может вернуть HTML вместо JSON — проверяем
+            if "text/html" in content_type:
+                log("ОШИБКА: API вернул HTML вместо JSON (вероятно WAF-блокировка)")
+                log(f"Content-Type: {content_type}, длина: {len(raw)}")
+                sys.exit(1)
+
+            if not raw.strip():
+                log("ОШИБКА: API вернул пустой ответ")
+                log("⚠️ refresh_token, вероятно, недействителен. Выполните: qwen")
+                sys.exit(1)
+
+            body = json.loads(raw)
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8", errors="replace")
         log(f"ОШИБКА HTTP {e.code}: {error_body}")
+        if e.code in (400, 401):
+            log("⚠️ refresh_token недействителен. Выполните: qwen")
         sys.exit(1)
     except urllib.error.URLError as e:
         log(f"ОШИБКА сети: {e.reason}")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        log(f"ОШИБКА JSON: {e}")
+        log(f"Ответ (первые 300 символов): {raw[:300]}")
         sys.exit(1)
 
     if body.get("status") != "success":
